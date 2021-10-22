@@ -153,6 +153,7 @@ $ cp -r /root/monday /root/monday_save
 # 파일 및 디렉토리 이동 또는 이름 변경 : mv [source] [target]
 $ mv /root/sunday /home/	# /root/sunday를 /home/ 디렉토리로 이동
 $ mv /root/sunday /root/$(date+"%Y-%m-%d")		# /root/sunday를 오늘날짜(%Y-%m-%d)로 이름 변경
+# $ date 입력시 설정된 타임존의 오늘 시간 출력. $(date +"%Y%m%d")로 현재 날짜 사용 가능.
 
 # 빈파일 생성
 $ touch 파일명
