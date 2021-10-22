@@ -64,9 +64,9 @@ linux에서는 데이터를 읽을 수 있는 자원 혹은 데이터를 쓸 수
 ```bash
 # u:사용자(user), g:그룹(group), o:다른사용자(other), a:전부(all)
 $ chmod g+w 파일
---- g+w는 그룹에게 write 권한 추가
+--- g+w는 그룹(g)에게 write 권한 추가
 $ chmod o-r 파일
---- o-r은 다른사용자에게 read 권한 제거
+--- o-r은 다른사용자(o)에게 read 권한 제거
 
 # 숫자를 이용한 권한 위임
 # 4:read, 2:write, 1:execute. 숫자 합으로 권한 선택
@@ -130,12 +130,32 @@ $ crontab -e
 --- 평일(월-금) 08:00시에 반복수행
 0 8 * * 0,6 /root/weekend.sh
 --- 주말(일,토) 08:00시에 반복수행
+0 6 1 1,4,7,10 * /root/quarter.sh
+--- 매분기 익월 1일 06시에 반복수행
 
 # crontab 백업(txt로 저장)
 $ crontab -l > /home/backup/crontab_bak.txt
 # 자동화
 $ crontab -e
 50 23 * * * crontab -l > /home/backup/crontab_bak.txt
+```
+
+
+
+* 기타
+
+```bash
+# 파일 및 디렉토리 복사 : cp [source] [target]
+$ cp /root/monday /root/monday_save
+# omitting directory 에러시
+$ cp -r /root/monday /root/monday_save
+
+# 파일 및 디렉토리 이동 또는 이름 변경 : mv [source] [target]
+$ mv /root/sunday /home/	# /root/sunday를 /home/ 디렉토리로 이동
+$ mv /root/sunday /root/$(date+"%Y-%m-%d")		# /root/sunday를 오늘날짜(%Y-%m-%d)로 이름 변경
+
+# 빈파일 생성
+$ touch 파일명
 ```
 
 
