@@ -97,6 +97,180 @@ SELinux는 커널의 기본 기능으로 동작하며, 모든 시스템 콜이 �
 
 
 
+SELinux는 enforce, permissive, disable 3가지 모드가 있으며, 기본 설정은 enforce mode로 보안 정책에 위배되는 모든 액션이 차단됩니다. permissive mode는 경고 메시지를 내고 차단하지는 않는다. 
+
+```
+SELinux 사용 여부 확인
+# sestatus
+---
+SELinux status:                 enabled
+SELinuxfs mount:                /sys/fs/selinux
+SELinux root directory:         /etc/selinux
+Loaded policy name:             targeted
+Current mode:                   enforcing
+Mode from config file:          enforcing
+Policy MLS status:              enabled
+Policy deny_unknown status:     allowed
+Max kernel policy version:      28
+
+SELinux 모드 전환
+# setenforce 0
+--- enforce mode
+# setenforce 1
+--- permissive mode
+
+SELinux를 끄는 것은 권장하지 않지만, /etc/selinux/config의 SELinux 항목을,
+SELINUX=disabled
+와 같이 설정하면 된다.
+```
+
+> SELinux를 비활성화했다가 다시 활성화할 때는 재부팅이 필요하다. 모든 리소스에 대해 보안 레이블을 추가해야 하므로 부팅 시간이 오래 걸릴 수 있다.
+
+
+
+* Security Context : SELinux는 모든 프로세스와 객체마다 보안 컨텍스트(Security Context)라고 부르는 정보를 부여하여 관리하고 있다. Security Context는 접권 권한을 확인하는데 사용되며 다음 4가지 구성 요소로 이루어져 있다.
+  * 사용자 : 시스템 사용자와는 별도의 SELinux 사용자이며, 역할이나 레벨과 연계하여 접근 권한을 관리하는데 사용.
+  * 역할(Role) : 하나 이상의 타입과 연결되어 SELinux 사용자의 접근을 허용할 지 결정하는데 사용.
+  * **타입(Type)** : **Type Enforcement**의 속성 중 하나로 프로세스의 도메인이나 파일의 타입을 지정하고 이를 기반으로 접근 통제를 수행.
+  * 레벨(Level) : 레벨은 MLS(Multi Level System)에 필요하며 강제 접근 통제보다 더 강력한 보안이 필요할때 사용하는 기능.
+
+4가지 구성 요소 중 핵심 부분은 타입이며 꼭 알아야 한다. 
+
+SELinux를 활성화하면 파일이나 디렉토리 등의 객체마다 보안 컨텍스트를 부여하는데, SELinux가 되입되면서 `ls`, `ps`, `cp`, `mv` 등의 유틸리티에는 `-Z`, `--context` 옵션이 추가되었다. 
+
+```bash
+ls -ldZ /var/www
+---
+drwxr-xr-x. centos centos unconfined_u:object_r:httpd_sys_content_t:s0 /var/www
+--- unconfined_u : 사용자 / object_r : 역할 / httpd_sys_content_t : 타입 / s0 : 레벨
+
+ps -Z | grep httpd
+---
+system_u:system_r:httpd_t:s0    15638 ?        00:00:38 php-fpm
+system_u:system_r:httpd_t:s0    15640 ?        00:00:05 php-fpm
+--- httpd_t : 보안 컨텍스트(Security Context)
+```
+
+
+
+* Type Enforcement
+
+TE(Type Enforcement)는 SELinux의 기본적인 접근 통제를 처리하는 매커니즘으로 주체가 객체에 접근하려고 할 때 주체에 부여된 보안 컨텍스트가 객체에 접근할 권한이 있는지 판단하는 역할을 수행한다.
+
+예를 들어, 아파치 웹 서버(httpd)가 /var/www/html/ 에 접근하려고 할 때, 아파치 웹 서버(httpd)는 주체(subject)가 되며 아파치 웹 서버에 부여된 보안 컨텍스트는 httpd_t가 된다. 객체에 부여된 보안 컨텍스트는 httpd_sys_content_t 이며 httpd_t 는 httpd_sys_content_t 보안 컨텍스트가 부여된 객체에 접근이 허용되므로 아파치 웹 서버는 /var/www/html/ 디렉토리에 있는 콘텐츠를 읽을 수 있다. 
+
+
+
+** __Security Context__ 와 __Type Enforcement__에 따르면,
+
+사전에 탑재된 httpd 에 대한 정책에 의해 httpd_sys_content_t가 붙은 컨텐츠만 읽을 수 있고, /var/www 아래에 파일을 생성하면 자동으로 httpd_sys_content_t 가 붙게 된다. 그러므로 /data/myweb-app 폴더를 만들고 이 안에 웹 서비스할 파일을 넣고 httpd에 DocumentRoot를 설정해도 SELinux는 미리 허용된 경로가 아니므로 차단시켜서 permission denied error가 발생한다.
+
+마찬가지로 httpd가 접근할 수 있게 사전에 허용된 context는 http_port_t이며 semanage 명령어로 해당 포트 목록을 조회할 수 있다.
+
+```bash
+semanage port -l | grep http_port_t
+
+# 기본적으로 허용된 포트는 아래처럼 80, 443, 9000, 8000 등이다.
+# http_port_t			tcp		9004, 8000, 8080, 10080, 8001, 80, 81, 443, 488, 8008, 8009, 8443, 9000
+```
+
+Type Enforcement로 인해 공격자가 "제로 데이 취약점"을 사용하여 httpd의 권한을 획득해도 다른 서버로 ssh 연결을 할 수 없다. 22번 포트는 허용되지 않았기 때문이며 덕분에 2차 피해를 최소화할 수 있다.
+
+ 
+
+또 다른 예로, 파일 공유 서비스와 mysql DBMS가 같이 구동되는 서버에서 파일 공유 서비스를 공격하여 권한을 탈취했다고 가정했을때, 공격자는 mysql DB 파일을 가져가려고 시도할 수 있다. 
+
+```bash
+ls -lZ /var/lib/mysql/
+
+-rw-rw----. mysql mysql system_u:object_r:mysqld_db_t:s0 ib_logfile0
+-rw-rw----. mysql mysql system_u:object_r:mysqld_db_t:s0 ib_logfile1
+-rw-rw----. mysql mysql system_u:object_r:mysqld_db_t:s0 ibdata1
+```
+
+SELinux 하에서는 파일 공유 서비스와 mysql은 별도의 도메인으로 격리되어 동작하며 mysql 데이터는 mysqld_db_t 보안 컨텍스트가 설정되어 있어 해당 객체에 접근할 수 없다. 이때, 웹 서버와 php-fpm을 연동하는데 포트를 기본 fpm 포트(9000)가 아닌 9001을 사용했거나 톰캣과 연동하는데 8009, 8000이 아닌 포트를 사용했다면 SELinux가 이를 차단해서 서비스가 동작하지 않는다. 
+
+
+
+---
+
+
+
+### SELinux 원활하게 사용하기
+
+#### 1. context 정보 얻기
+
+SELinux 문제를 해결하기 위해서는 context 정보를 확인하고 이를 맞춰주는게 중요하다. 이를 위해 context 정보를 확인할 수 있는 유틸리티 사용법을 알아보자.
+
+```bash
+$ yum install setools-console
+
+# seinfo는 policy 조회하고 출력하는 명령어
+$ seinfo
+
+# seindo -a 옵션으로 조회할 속성 지정 가능
+$ seinfo -adomain -x		
+--- 전체 도메인 출력
+
+# sesearch 지정한 룰 조회
+$ sesearch --role_allow -t httpd_sys_content_t		
+--- httpd_sys_content_t 객체에 접근 가능한 롤 그룹 표시
+
+# sesearch --allow 옵션으로 특정 context에 허용된 액션을 알 수 있다.
+$ sesearch --allow -s httpd_t
+---
+allow httpd_t httpd_sys_content_t : file { ioctl read getattr lock open } ; 
+allow httpd_t zoneminder_log_t : file { ioctl getattr lock append open } ; 
+allow httpd_t httpd_sys_content_t : dir { ioctl read getattr lock search open } ; 
+allow httpd_t zoneminder_log_t : dir { getattr search open } ;
+---
+# httpd_t는 httpd_sys_content_t가 설정된 파일에 대해 [ioctl, read, getattr, lock, open] system call이 가능합니다. 즉, httpd_t는 httpd_sys_content_t 컨텐츠를 읽을 수 있다.
+```
+
+
+
+#### 2. 수정
+
+만약 mysql을 3307 포트로 구동했다면 허용된 포트가 아니기 때문에 web 서버가 mysql에 연결할 수 없으며 허용된 포트를 사용하거나 정책을 수정하는 semanage명령어로 변경된 정보를 SELinux에게 알려주면 된다.
+
+semanage는 SELinux의 보안 정책을 조회하고 [추가/변경/삭제] 할 수 있는 명령행 기반 유틸리티이다.
+
+앞서, 보안 컨텍스트에는 파일, 네트워크 포트, 네트워크 인터페이스 등이 있으며, 서비스 데몬이 SELinux 에서 문제없이 동작하려면 필수적으로 알아두어야 할 것이 바로 **파일**과 **네트워크 포트** 컨텍스트이다.
+
+```bash
+$ yum install -y policycoreutils-python
+
+# httpd가 연결할 수 있는 포트 정보 확인
+$ semanage port -l | grep http_port_t
+---
+http_port_t			tcp		8081, 8080, 8090, 80, 81, 443, 488, 8008, 8009, 8443, 9000
+--- semanage 명령어의 첫번째는 컨텍스트 이름이 와야하며(여기선 포트), Object 리스트를 보는 -l 옵션을 추가한다.
+
+### 위 상황에서 WAS가 9876 포트를 사용한다면 등록되지 않은 포트이므로, SELinux는 웹 서버가 9876 포트에 연결하지 못하도록 차단할 것이다. 이때, semanage 명령어로 포트를 추가해 주면 웹 서버가 9876 포트에 연결할 수 있다.
+$ semanage port -a -p tcp -t http_port_t 9876
+
+# 포트 사용중 에러 발생시 : /usr/sbin/semanage: tcp/9876에 대한 포트가 이미 지정되었습니다
+$ semanage port -m -p tcp -t http_port_t 9876
+--- [추가/변경/삭제] 옵션은 [-a/-m/-d]
+```
+
+
+
+파일 컨텍스트는 fcontext 아규먼트를 이용할 수 있다.
+
+```bash
+# semanage fcontext -l | grep httpd_sys_content_t
+---
+/var/lib/htdig(/.*)?		all files		system_u:object_r:httpd_sys_content_t:s0 
+/var/lib/trac(/.*)?			all files		system_u:object_r:httpd_sys_content_t:s0 
+/var/www(/.*)?				all files		system_u:object_r:httpd_sys_content_t:s0 
+/var/www/icons(/.*)?		all files		system_u:object_r:httpd_sys_content_t:s0 
+/var/www/svn/conf(/.*)?		all files		system_u:object_r:httpd_sys_content_t:s0
+--- /var/www(/.*)?은 /var/www 하위에 생성되는 모든 파일과 디렉토리는 httpd_sys_content_t*를 붙이라는 의미
+
+# 웹 서버 콘텐츠가 /opt/mycontent 에 있다면 해당 디렉토리에 존재하는 모든 파일과 디렉토리에 httpd_sys_content_t를 붙여야 정상적으로 서비스가 가능하므로 semanage fcontext를 지정한다.
+$ semanage fcontext -a -t httpd_sys_content_t "/opt/mycontent(/.*)?"
+```
 
 
 
@@ -104,16 +278,69 @@ SELinux는 커널의 기본 기능으로 동작하며, 모든 시스템 콜이 �
 
 
 
+* etc
+
+SELinux 사용시 문제가 발생하는 원인과 로그가 쌓이는 위치를 몰라 메시지 해석이 어렵다.
+
+SELinux 관련 로그는 /var/log/audit/audit.log에 저장되며 root만 볼 수 있다.
+
+```bash
+# SELinux의 차단 이유에 대한 audit 로그를 출력
+$ audit2why < /var/log/audit/audit.log
+---
+type=AVC msg=audit(1463625135.602:32366): avc:  denied  { name_connect } for  pid=25862 comm="nginx" dest=9001 scontext=unconfined_u:system_r:httpd_t:s0 tcontext=system_u:object_r:tor_port_t:s0 tclass=tcp_socket
+
+        Was caused by:
+        The boolean httpd_can_network_connect was set incorrectly. 
+        Description:
+        Allow HTTPD scripts and modules to connect to the network using TCP.
+
+        Allow access by executing:
+        # setsebool -P httpd_can_network_connect 1
+--- 결과는 다음과 같이 차단된 process와 원인, 해결책 등을 제시한다.
+```
 
 
 
+audit2why 는 모든 로그를 보여주기 때문에 로그가 많이 쌓여있을 경우 보기가 어렵다. 커널 로그를 검색할 수 있는 ausearch 명령어를 사용하면 기간별, 타입별로 로그를 조회할 수 있다.
+
+```bash
+$ yum install audit
+
+# 2016년 5월 13일 이후 발생한 이벤트만 표시
+$ ausearch -m AVC,USER_AVC -ts 05/13/2016
+--- -m : 메시지 타입(콤마를 이용해 여러 개 지정 가능) / -ts 또는 -start : 시작 날짜 지정
+
+# 이번 달 발생 로그
+$ ausearch -m AVC,USER_AVC -ts this-month
+--- now, recent, today, this-week, this-month, this-year 가능
+
+```
 
 
 
+만약 audit2why 와 ausearch 가 출력하는 이벤트 로그가 익숙하지 않다면, 이를 쉽게 번역해주는 유틸리티가 존재한다. sealert를 이용해보자.
+
+```bash
+$ yum install setroubleshoot-server
+
+# 현재 이벤트 로그 분석 (-a 옵션)
+$ sealert -a /var/log/audit/audit.log
+---
+SELinux is preventing /usr/sbin/nginx from name_connect access on the tcp_socket .
+
+*****  Plugin catchall_boolean (89.3 confidence) suggests  *******************
+
+If you want to allow HTTPD scripts and modules to connect to the network using TCP.
+Then you must tell SELinux about this by enabling the 'httpd_can_network_connect'boolean.
+Do
+setsebool -P httpd_can_network_connect 1
+---
+```
 
 
 
-
+ref) https://lesstif.gitbooks.io/web-service-hardening/content/selinux.html#semanage
 
 
 

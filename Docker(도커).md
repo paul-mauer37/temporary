@@ -125,6 +125,141 @@ WSL2(Windows Subsystem for Linux 2)는 간단히 말해, 리눅스 애플리케�
 
  
 
+```dockerfile
+###
+### 도커에 java + svn 설치하기
+###
+
+# 도커에서 원하는 이미지 설치
+PS C:\> docker pull asfaltica/centos-java-svn
+---
+Using default tag: latest
+latest: Pulling from asfaltica/centos-java-svn
+d5e46245fe40: Pull complete
+...
+Status: Downloaded newer image for asfaltica/centos-java-svn:latest
+docker.io/asfaltica/centos-java-svn:latest
+
+# 도커 이미지 목록
+PS C:\> docker images
+---
+REPOSITORY                    TAG       IMAGE ID          CREATED             SIZE
+elleflorio/svn-server       latest    d76927e90a44      3 months ago         49.7MB
+asfaltica/centos-java-svn   latest    0b22b9471f3a      3 years ago           418MB
+
+# 도커 컨테이너 생성
+PS C:\> docker create -i -t --name centos asfaltica/centos-java-svn
+
+# 도커 프로세스 확인
+PS C:\> docker ps -a
+---
+CONTAINER ID           IMAGE               COMMAND            CREATED               STATUS               PORTS       NAMES
+187523463e2b   asfaltica/centos-java-svn    "bash"         5 seconds ago            Created                          centos
+3bf100739e24    elleflorio/svn-server       "/init"        21 hours ago     Exited (0) 12 minutes ago              svn-server
+
+# 도커 컨테이너 실행
+PS C:\> docker start centos
+---
+centos
+
+# 도커 컨테이너 들어가기
+PS C:\> docker attach centos
+---
+[root@home /]# find . -name svn*
+---
+./run/svnserve
+./usr/lib/tmpfiles.d/svnserve.conf
+...
+
+# SVN 저장소 생성 및 설정
+[root@ home]# svnadmin create /home/svn/test_repo
+...
+svn 설정
+...
+[root@ home]# svnserve -d -r /home/svn/test_repo --listern-port 3690
+---
+이 방법은, 컨테이너를 나오면 svn 서버도 닫히게 된다. 그러므로 백그라운드 모드가 필요!!!
+
+# 도커 컨테이너 백그라운드 모드 실행 (detached mode)
+1. PS C:\> docker run -dit --name centos -p 3690:3690 asfaltica/centos-java-svn
+2. PS C:\> docker run -dit --name centos -v C:/tools.docker/share:/share.host -p 9290:80 -p 3690:3690 asfaltica/centos-java-svn
+3. PS C:\> docker run -dit --name centos -v C:/tools.docker/share:/share.host --network="host" -p 3690:3690 asfaltica/centos-java-svn
+
+# docker 들어가기
+PS C:\> docker exec -ti centos bash
+
+# svn 서버 기동
+svnserve -d -r 디렉로티 --listen-port 3690
+```
+
+
+
+```dockerfile
+###
+### 도커에 svn 설치하기
+###
+
+# 1. 도커 볼륨 만들기
+PS C:\> docker volume create svn-root
+
+# 2. 도커 볼륨에 다운로드 및 실행
+PS C:\> docker run -dit --name svn-server -v svn-root:/home/svn -p 7443:80 -p 3690:3690 -w /homw/svn elleflorio/svn-server
+# --name 컨테이너이름
+# -v 볼륨:디렉토리지정
+# -p 외부포트:내부포트 (svn 기본 포트는 3690)
+# -w 작업디렉토리
+#  이미지 elleflorio/svn-server
+
+# 3. 컨테이너 설정 (docker accrss http protocol)
+PS C:\> docker exec -t-svn-server htpasswd -b /etc/subversion/passwd svnadmin [패스워드]
+
+# 4. 저장소 생성 및 설정
+PS C:\> docker exec -it svn-server svnadmin create test-repo
+...
+svn 설정
+...
+
+# 5. 접속
+PS C:\> docker exec -it svn-server /bin/sh
+/home/svn # svn info svn://localhost:3690/test_repo
+---
+Path: test_repo
+URL: svn://localhost/test_repo
+...
+Revision: 2
+...                                               
+```
+
+
+
+
+
+
+
+ref) https://blog.naver.com/brainkorea/222065165554
+
+ref) https://blog.naver.com/brainkorea/222060996586
+
+ref) https://blog.naver.com/teja/221558965716
+
+ref) https://gist.github.com/dpmex4527/1d702357697162384d31d033a7d505eb
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
